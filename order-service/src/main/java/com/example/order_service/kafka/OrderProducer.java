@@ -18,10 +18,10 @@ public class OrderProducer {
     public void sendOrder(OrderResponse response) {
         String json = objectMapper.writeValueAsString(response);
         kafkaTemplate
-                .send("order-created", json)
+                .send("order-created", String.valueOf(response.getOrderId()), json)
                 .whenComplete((result, exception) -> {
                     if(exception == null) {
-                        System.out.println("message sent to kafka");
+                        System.out.println("message sent to kafka " + result.getRecordMetadata().partition());
                     } else {
                         System.out.println("Failed to send message to Kafka");
                         exception.printStackTrace();
