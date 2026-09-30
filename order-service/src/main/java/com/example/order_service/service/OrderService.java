@@ -9,14 +9,16 @@ import org.springframework.stereotype.Service;
 public class OrderService {
 
     private final OrderProducer orderProducer;
+    private long orderCounter = 0;
 
     public OrderService(OrderProducer orderProducer) {
         this.orderProducer = orderProducer;
     }
 
     public OrderResponse placeOrder(OrderRequest order) {
+        long orderId = orderCounter++;
         OrderResponse response = new OrderResponse(
-                1,
+                (int) orderId,
                 order.getProduct(),
                 order.getQuantity(),
                 "CREATED"
