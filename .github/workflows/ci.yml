@@ -1,16 +1,23 @@
-name: Build and Test
-'on':
-  push: null
-  pull_request: null
+
+name: Build, Test and Publish
+
+on:
+  push:
+  pull_request:
+
 permissions:
   contents: read
+  packages: write
+
 jobs:
   order-service:
-    name: Build and Test order-service
+    name: Build and Publish order-service
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -18,35 +25,69 @@ jobs:
           java-version: '21'
           cache: maven
           cache-dependency-path: order-service/pom.xml
+
       - name: Build and test
         working-directory: order-service
         run: |
           chmod +x mvnw
           ./mvnw -B verify
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/precise-charmerr/order-service
+          tags: |
+            type=sha
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and publish Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./order-service
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
   notification-service:
-    name: Build and Test notification-service
+    name: Build and Publish notification-service
     runs-on: ubuntu-latest
+
     services:
       kafka:
-        image: 'apache/kafka:4.0.1'
+        image: apache/kafka:4.0.1
         ports:
-          - '9092:9092'
+          - 9092:9092
         env:
           KAFKA_NODE_ID: 1
-          KAFKA_PROCESS_ROLES: 'broker,controller'
-          KAFKA_LISTENERS: 'PLAINTEXT://:9092,CONTROLLER://:9093'
-          KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://localhost:9092'
-          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT'
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
           KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
           KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-          KAFKA_CONTROLLER_QUORUM_VOTERS: '1@localhost:9093'
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
           KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
           KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
           KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -54,9 +95,10 @@ jobs:
           java-version: '21'
           cache: maven
           cache-dependency-path: notification-service/pom.xml
+
       - name: Wait for Kafka
         run: |
-          echo "Waiting for Kafka to accept connections..."
+          echo "Waiting for Kafka..."
           for i in {1..60}; do
             if (echo > /dev/tcp/localhost/9092) >/dev/null 2>&1; then
               echo "Kafka port is accepting connections"
@@ -67,10 +109,40 @@ jobs:
           done
           echo "Kafka did not become ready in time"
           exit 1
+
       - name: Build and test
         working-directory: notification-service
         env:
-          SPRING_KAFKA_BOOTSTRAP_SERVERS: 'localhost:9092'
+          SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
         run: |
           chmod +x mvnw
           ./mvnw -B verify
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/precise-charmerr/notification-service
+          tags: |
+            type=sha
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and publish Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./notification-service
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
