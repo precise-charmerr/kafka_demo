@@ -163,3 +163,11 @@ echo "Current Kubernetes resources:"
 
 kubectl get deployment,service,pods \
     -n "$NAMESPACE"
+
+
+                    __
+        ____   __  / / _____  ____
+       / __ \ / / / / / ___/ / __ \
+      / /_/ // /_/ / / /    / /_/ /
+     / .___/ \__, / /_/     \____/
+    /_/     /____/
