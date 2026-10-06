@@ -170,3 +170,71 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/precise-charmerr/${{ matrix.service }}:${{ needs.version.outputs.image_version }}
+
+  # 5. Deploy to Kubernetes
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: self-hosted
+
+    needs:
+      - version
+      - publish
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Verify Kubernetes access
+        run: |
+          kubectl version --client
+          kubectl get nodes
+
+      - name: Set application version
+        run: |
+          VERSION=$(tr -d '[:space:]' < VERSION)
+
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version: $VERSION"
+            exit 1
+          fi
+
+          echo "IMAGE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Deploying version: $VERSION"
+
+      - name: Deploy namespace
+        run: |
+          kubectl apply -f k8s/infra/namespace.yaml
+
+      - name: Deploy Kafka
+        run: |
+          kubectl apply -f k8s/infra/kafka.yaml
+
+      - name: Deploy Order Service
+        run: |
+          sed "s|\${IMAGE_VERSION}|${IMAGE_VERSION}|g" \
+            k8s/apps/order-service.yaml | kubectl apply -f -
+
+      - name: Deploy Notification Service
+        run: |
+          sed "s|\${IMAGE_VERSION}|${IMAGE_VERSION}|g" \
+            k8s/apps/notification-service.yaml | kubectl apply -f -
+
+      - name: Wait for rollouts
+        run: |
+          kubectl rollout status deployment/kafka \
+            -n kafka-demo \
+            --timeout=180s
+
+          kubectl rollout status deployment/order-service \
+            -n kafka-demo \
+            --timeout=180s
+
+          kubectl rollout status deployment/notification-service \
+            -n kafka-demo \
+            --timeout=180s
+
+      - name: Verify deployment
+        run: |
+          kubectl get deployments -n kafka-demo
+          kubectl get pods -n kafka-demo
+          kubectl get services -n kafka-demo
